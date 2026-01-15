@@ -92,6 +92,8 @@ parser.add_argument('--vit_prune_target', default='head', type=str, choices=['he
                     help='ViT structured pruning target: head (attention heads), mlp (MLP neurons), both (head+mlp)')
 parser.add_argument('--mlp_prune_ratio', default=None, type=float, 
                     help='MLP neuron pruning ratio (default: use same as --rate)')
+parser.add_argument('--sorting_mode', default='layer-wise', type=str, choices=['layer-wise', 'global'],
+                    help='Sorting mode for ViT structured pruning: layer-wise (each layer independently) or global (all layers mixed)')
 best_sa = 0
 
 def main():
@@ -218,7 +220,6 @@ def main():
             # ResNet还需要恢复conv1
             if 'conv1.weight' in new_initialization:
                 initialization['conv1.weight'] = new_initialization['conv1.weight']
-        
         else:
             raise ValueError("❌ 无法识别模型类型：既没有head也没有fc层！请检查模型结构。")
         
@@ -419,7 +420,7 @@ def main():
                             m.weight.data = initialization[name + ".weight"]
                             mask = passer.current_mask[mask_key]
                             print('pruning ViT layer with custom mask:', name)
-                            prune.CustomFromMask.apply(m, 'weight', mask=mask.to(m.weight.device))
+                        prune.CustomFromMask.apply(m, 'weight', mask=mask.to(m.weight.device))
 
         #report result
         validate(val_loader, model, criterion) # extra forward
@@ -453,14 +454,14 @@ def main():
         else:
             # ========== ResNet剪枝 (原有逻辑) ==========
             pruning_model(model, args.rate, conv1=False)
-            remain_weight_after = check_sparsity(model, conv1=False)
+        remain_weight_after = check_sparsity(model, conv1=False)
             
             # 提取mask
-            current_mask = extract_mask(model.state_dict())
-            passer.current_mask = current_mask
+        current_mask = extract_mask(model.state_dict())
+        passer.current_mask = current_mask
             
             # 移除剪枝重参数化
-            remove_prune(model, conv1=False)
+        remove_prune(model, conv1=False)
         
         if remain_weight_after is not None:
             wandb.log({'remain_weight_after': remain_weight_after})
@@ -484,7 +485,8 @@ def main():
                             model, mask_dict=current_mask, train_loader=train_loader,
                             trained_weight=train_weight, init_weight=initialization,
                             criteria=args.criteria, head_prune_ratio=args.rate, 
-                            mlp_prune_ratio=mlp_ratio, return_mask_only=False)
+                            mlp_prune_ratio=mlp_ratio, return_mask_only=False,
+                            sorting_mode=args.sorting_mode)
                     elif args.vit_prune_target == 'head':
                         print('[ViT] 使用Head级别准结构化剪枝 (Refill)')
                         model = vit_pruning_utils.prune_model_custom_fillback_vit_by_head(
@@ -524,7 +526,8 @@ def main():
                             model, mask_dict=current_mask, train_loader=train_loader,
                             trained_weight=train_weight, init_weight=initialization,
                             criteria=args.criteria, head_prune_ratio=args.rate,
-                            mlp_prune_ratio=mlp_ratio, return_mask_only=True)
+                            mlp_prune_ratio=mlp_ratio, return_mask_only=True,
+                            sorting_mode=args.sorting_mode)
                     elif args.vit_prune_target == 'head':
                         print('[ViT] 使用Head级别准结构化剪枝 (RSST)')
                         mask = vit_pruning_utils.prune_model_custom_fillback_vit_by_head(
