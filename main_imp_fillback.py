@@ -25,9 +25,13 @@ import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data.sampler import SubsetRandomSampler
-from advertorch.utils import NormalizeByChannelMeanStd
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 from utils import *
 from pruning_utils import *
+import vit_pruning_utils
+import vit_structured_pruning  # 新增：结构化剪枝模块
+import vit_pruning_utils_head_mlp  # 新增：Head+MLP组合剪枝模块
 
 from reg_pruner_files import reg_pruner
 import wandb
@@ -44,9 +48,11 @@ parser = argparse.ArgumentParser(description='PyTorch Iterative Pruning')
 parser.add_argument('--data', type=str, default='data', help='location of the data corpus')
 parser.add_argument('--dataset', type=str, default='cifar100', help='dataset')
 parser.add_argument('--arch', type=str, default='res20s', help='model architecture')
+parser.add_argument('--vit_pretrained', action='store_true', help='use pretrained model (for ViT)')
 parser.add_argument('--file_name', type=str, default=None, help='dataset index')
 parser.add_argument('--seed', default=None, type=int, help='random seed')
 parser.add_argument('--save_dir', help='The directory used to save the trained models', default='cifar100_rsst_output_resnet20_l1_exp_custom_exponents4', type=str)
+parser.add_argument('--exp_name', type=str, default=None, help='custom experiment name for wandb (auto-generate if None)')
 parser.add_argument('--gpu', type=int, default=0, help='gpu device id')
 parser.add_argument('--resume', action="store_true", help="resume from checkpoint")
 parser.add_argument('--checkpoint', type=str, default=None, help='checkpoint file')
@@ -54,6 +60,7 @@ parser.add_argument('--init', type=str, default='init_model/cifar100_output_resn
 
 ##################################### training setting #################################################
 parser.add_argument('--batch_size', type=int, default=3128, help='batch size')
+parser.add_argument('--workers', type=int, default=4, help='number of data loading workers')
 parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--weight_decay', default=1e-4, type=float, help='weight decay')
@@ -80,6 +87,11 @@ parser.add_argument('--RST_schedule', type=str, default='exp_custom_exponents', 
 parser.add_argument('--reg_granularity_prune', type=float, default=1, help='正则化阈值')
 parser.add_argument('--criteria', default="l1", type=str, choices=['remain', 'magnitude', 'l1', 'l2', 'saliency'])
 parser.add_argument('--exponents', default=4, type=int, help='此参数用来控制指数函数的曲率' )
+parser.add_argument('--vit_structured', action='store_true', help='use structured pruning for ViT (head-level, not element-wise)')
+parser.add_argument('--vit_prune_target', default='head', type=str, choices=['head', 'mlp', 'both'], 
+                    help='ViT structured pruning target: head (attention heads), mlp (MLP neurons), both (head+mlp)')
+parser.add_argument('--mlp_prune_ratio', default=None, type=float, 
+                    help='MLP neuron pruning ratio (default: use same as --rate)')
 best_sa = 0
 
 def main():
@@ -87,8 +99,48 @@ def main():
     args = parser.parse_args()
     args.use_sparse_conv = False
     print(args)
-    # 初始化WandB
-    wdb_name = '_'.join([args.struct, args.RST_schedule, args.criteria, args.arch, args.dataset])
+    
+    # 初始化WandB - 灵活的实验名称
+    if args.exp_name:
+        # 用户自定义名称
+        wdb_name = args.exp_name
+    else:
+        # 自动生成名称
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
+        
+        # 基础信息
+        name_parts = [args.struct, args.arch, args.dataset]
+        
+        # 添加关键参数
+        if args.struct == 'rsst':
+            name_parts.append(f"sched_{args.RST_schedule}")
+            name_parts.append(f"reg_{args.reg_granularity_prune}")
+            if args.RST_schedule == 'exp_custom_exponents':
+                name_parts.append(f"exp{args.exponents}")
+        elif args.struct == 'refill':
+            name_parts.append(f"fill_{args.fillback_rate}")
+        
+        name_parts.append(f"crit_{args.criteria}")
+        name_parts.append(f"rate_{args.rate}")
+        
+        # 添加预训练标识
+        if hasattr(args, 'vit_pretrained') and args.vit_pretrained:
+            name_parts.append("pretrained")
+        
+        # 添加结构化剪枝标识
+        if hasattr(args, 'vit_structured') and args.vit_structured:
+            if hasattr(args, 'vit_prune_target'):
+                name_parts.append(f"struct_{args.vit_prune_target}")
+            else:
+                name_parts.append("struct_head")
+        
+        # 添加时间戳
+        name_parts.append(timestamp)
+        
+        wdb_name = '_'.join(name_parts)
+    
+    print(f'WandB实验名称: {wdb_name}')
     wandb.init(project='RSST', entity='ycx', name=wdb_name, config=vars(parser.parse_args()))
     print('*'*50)
     print('conv1 included for prune and rewind: {}'.format(args.conv1))
@@ -144,15 +196,58 @@ def main():
     if not args.prune_type == 'lt':
         keys = list(initialization.keys())
         for key in keys:
-            if key.startswith('fc') or key.startswith('conv1'):
+            # 跳过分类头和conv1（ResNet用fc，ViT用head）
+            if key.startswith('fc') or key.startswith('conv1') or key.startswith('head'):
                 del initialization[key]
 
-        initialization['fc.weight'] = new_initialization['fc.weight']
-        initialization['fc.bias'] = new_initialization['fc.bias']
-        initialization['conv1.weight'] = new_initialization['conv1.weight']
+        # 判断模型类型并恢复对应的分类头（互斥选择）
+        if 'head.weight' in new_initialization:
+            # ViT模型 - 恢复head层
+            num_classes = new_initialization['head.weight'].shape[0]
+            print(f"✓ 检测到ViT模型，使用新初始化的head层（类别数：{num_classes}）")
+            initialization['head.weight'] = new_initialization['head.weight']
+            initialization['head.bias'] = new_initialization['head.bias']
+            
+        elif 'fc.weight' in new_initialization:
+            # ResNet模型 - 恢复fc和conv1层
+            num_classes = new_initialization['fc.weight'].shape[0]
+            print(f"✓ 检测到ResNet模型，使用新初始化的fc层（类别数：{num_classes}）")
+            initialization['fc.weight'] = new_initialization['fc.weight']
+            initialization['fc.bias'] = new_initialization['fc.bias']
+            
+            # ResNet还需要恢复conv1
+            if 'conv1.weight' in new_initialization:
+                initialization['conv1.weight'] = new_initialization['conv1.weight']
+        
+        else:
+            raise ValueError("❌ 无法识别模型类型：既没有head也没有fc层！请检查模型结构。")
+        
         model.load_state_dict(initialization)
     else:
+        # lottery ticket (lt) - 也需要处理分类头不匹配的问题
         print(initialization.keys())
+        
+        # 判断模型类型并处理分类头（互斥选择）
+        if 'head.weight' in new_initialization:
+            # ViT模型 - 检查head维度是否匹配
+            if 'head.weight' in initialization:
+                init_classes = initialization['head.weight'].shape[0]
+                new_classes = new_initialization['head.weight'].shape[0]
+                if init_classes != new_classes:
+                    print(f"⚠️  检测到head类别数不匹配（{init_classes} → {new_classes}），使用新的head层")
+                    initialization['head.weight'] = new_initialization['head.weight']
+                    initialization['head.bias'] = new_initialization['head.bias']
+        elif 'fc.weight' in new_initialization:
+            
+            # ResNet模型 - 检查fc维度是否匹配
+            if 'fc.weight' in initialization:
+                init_classes = initialization['fc.weight'].shape[0]
+                new_classes = new_initialization['fc.weight'].shape[0]
+                if init_classes != new_classes:
+                    print(f"⚠️  检测到fc类别数不匹配（{init_classes} → {new_classes}），使用新的fc层")
+                    initialization['fc.weight'] = new_initialization['fc.weight']
+                    initialization['fc.bias'] = new_initialization['fc.bias']
+        
         model.load_state_dict(initialization)
         
     if args.resume:
@@ -172,7 +267,10 @@ def main():
             #     print(current_mask[m].float().mean())
             #print(current_mask)
             prune_model_custom(model, current_mask)
-            check_sparsity(model, conv1=False)
+            if vit_pruning_utils.is_vit_model(model):
+                vit_pruning_utils.check_sparsity_vit(model, prune_patch_embed=False)
+            else:
+                check_sparsity(model, conv1=False)
             optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
@@ -216,7 +314,11 @@ def main():
         print('******************************************')
         
 
-        remain_weight = check_sparsity(model, conv1=False)
+        # 根据模型类型选择合适的sparsity检查函数
+        if vit_pruning_utils.is_vit_model(model):
+            remain_weight = vit_pruning_utils.check_sparsity_vit(model, prune_patch_embed=False)
+        else:
+            remain_weight = check_sparsity(model, conv1=False)
         wandb.log({'remain_weight': remain_weight})
         if state > 0 and passer.args.struct == 'rsst':
             passer.reg_plot_init = 0
@@ -287,12 +389,14 @@ def main():
             # 显示图表
             plt.show()
 
-            # 遍历模型的所有模块，并为每个卷积层进行处理
+            # 遍历模型的所有模块，并为每个卷积层/线性层进行处理
+            is_vit = vit_pruning_utils.is_vit_model(model)
             for i, (name, m) in enumerate(model.named_modules()):
-                # 判断模块是否为卷积层
+                # 判断模块是否为卷积层（CNN）或Linear层（ViT）
                 if isinstance(m, nn.Conv2d):
                     # 判断是否处理第一层卷积或者其他卷积层
-                    if name != 'conv1':
+                    # 对于ViT模型，跳过patch_embed层
+                    if name != 'conv1' and not (is_vit and 'patch_embed' in name):
                         # 获取对应的权重掩码
                         mask = passer.current_mask[name + '.weight_mask']
                         # 将掩码张量重新塑形为二维，其中第一维是通道数
@@ -305,6 +409,17 @@ def main():
                         mask = mask.view(*passer.current_mask[name + '.weight_mask'].shape)
                         print('pruning layer with custom mask:', name)
                         prune.CustomFromMask.apply(m, 'weight', mask=mask.to(m.weight.device))
+                
+                elif isinstance(m, nn.Linear) and is_vit:
+                    # 处理ViT的Attention和MLP层
+                    if 'attn' in name or 'mlp' in name:
+                        mask_key = name + '.weight_mask'
+                        if mask_key in passer.current_mask:
+                            # 这一步应该放在正则化后 实现剪枝
+                            m.weight.data = initialization[name + ".weight"]
+                            mask = passer.current_mask[mask_key]
+                            print('pruning ViT layer with custom mask:', name)
+                            prune.CustomFromMask.apply(m, 'weight', mask=mask.to(m.weight.device))
 
         #report result
         validate(val_loader, model, criterion) # extra forward
@@ -320,32 +435,129 @@ def main():
         best_sa = 0
         start_epoch = 0
 
-        pruning_model(model, args.rate, conv1=False)
-        remain_weight_after = check_sparsity(model, conv1=False)
-        wandb.log({'remain_weight_after':remain_weight_after})
-        current_mask = extract_mask(model.state_dict())
-        passer.current_mask = current_mask
-        remove_prune(model, conv1=False)
+        # 根据模型类型选择剪枝函数
+        is_vit = vit_pruning_utils.is_vit_model(model)
+        
+        if is_vit:
+            # ========== ViT非结构化剪枝 (原有逻辑) ==========
+            vit_pruning_utils.pruning_model_vit(model, args.rate, prune_patch_embed=False)
+            remain_weight_after = vit_pruning_utils.check_sparsity_vit(model, prune_patch_embed=False)
+            
+            # 提取mask
+            current_mask = vit_pruning_utils.extract_mask_vit(model.state_dict())
+            passer.current_mask = current_mask
+            
+            # 移除剪枝重参数化
+            vit_pruning_utils.remove_prune_vit(model, prune_patch_embed=False)
+            
+        else:
+            # ========== ResNet剪枝 (原有逻辑) ==========
+            pruning_model(model, args.rate, conv1=False)
+            remain_weight_after = check_sparsity(model, conv1=False)
+            
+            # 提取mask
+            current_mask = extract_mask(model.state_dict())
+            passer.current_mask = current_mask
+            
+            # 移除剪枝重参数化
+            remove_prune(model, conv1=False)
+        
+        if remain_weight_after is not None:
+            wandb.log({'remain_weight_after': remain_weight_after})
 
         model.load_state_dict(initialization)
-        #########################################Refill Method###########################################################
+        
+        #########################################Refill/RSST Method###########################################################
         if args.struct == 'refill':
             print('执行Refill算法')
-            model = prune_model_custom_fillback(model, mask_dict=current_mask, train_loader=train_loader,
-                                        trained_weight=train_weight, init_weight=initialization,criteria=args.criteria, fillback_rate=args.fillback_rate, return_mask_only=False)
+            if is_vit:
+                # 判断是否使用准结构化剪枝
+                if args.vit_structured:
+                    # 确定MLP剪枝率
+                    mlp_ratio = args.mlp_prune_ratio if args.mlp_prune_ratio is not None else args.rate
+                    
+                    if args.vit_prune_target == 'both':
+                        print(f'[ViT] 使用Head+MLP组合准结构化剪枝 (Refill)')
+                        print(f'  - Head剪枝率: {args.rate}')
+                        print(f'  - MLP剪枝率: {mlp_ratio}')
+                        model = vit_pruning_utils_head_mlp.prune_model_custom_fillback_vit_head_and_mlp(
+                            model, mask_dict=current_mask, train_loader=train_loader,
+                            trained_weight=train_weight, init_weight=initialization,
+                            criteria=args.criteria, head_prune_ratio=args.rate, 
+                            mlp_prune_ratio=mlp_ratio, return_mask_only=False)
+                    elif args.vit_prune_target == 'head':
+                        print('[ViT] 使用Head级别准结构化剪枝 (Refill)')
+                        model = vit_pruning_utils.prune_model_custom_fillback_vit_by_head(
+                            model, mask_dict=current_mask, train_loader=train_loader,
+                            trained_weight=train_weight, init_weight=initialization,
+                            criteria=args.criteria, prune_ratio=args.rate,
+                            return_mask_only=False)
+                    elif args.vit_prune_target == 'mlp':
+                        raise NotImplementedError('单独MLP剪枝尚未实现，请使用both模式')
+                else:
+                    print('[ViT] 使用Element-wise非结构化剪枝 (Refill)')
+                    model = vit_pruning_utils.prune_model_custom_fillback_vit(
+                        model, mask_dict=current_mask, train_loader=train_loader,
+                        trained_weight=train_weight, init_weight=initialization,
+                        criteria=args.criteria, fillback_rate=args.fillback_rate, 
+                        return_mask_only=False)
+            else:
+                model = prune_model_custom_fillback(
+                    model, mask_dict=current_mask, train_loader=train_loader,
+                    trained_weight=train_weight, init_weight=initialization,
+                    criteria=args.criteria, fillback_rate=args.fillback_rate, 
+                    return_mask_only=False)
         elif args.struct == 'rsst':
             print('执行RSST算法')
             # rsst剪枝功能 返回refill mask而不剪枝
-            mask = prune_model_custom_fillback(model, mask_dict=current_mask, train_loader=train_loader,
-                                        trained_weight=train_weight, init_weight=initialization,criteria=args.criteria , fillback_rate=0.0 ,return_mask_only=True)
+            if is_vit:
+                # 判断是否使用准结构化剪枝
+                if args.vit_structured:
+                    # 确定MLP剪枝率
+                    mlp_ratio = args.mlp_prune_ratio if args.mlp_prune_ratio is not None else args.rate
+                    
+                    if args.vit_prune_target == 'both':
+                        print(f'[ViT] 使用Head+MLP组合准结构化剪枝 (RSST)')
+                        print(f'  - Head剪枝率: {args.rate}')
+                        print(f'  - MLP剪枝率: {mlp_ratio}')
+                        mask = vit_pruning_utils_head_mlp.prune_model_custom_fillback_vit_head_and_mlp(
+                            model, mask_dict=current_mask, train_loader=train_loader,
+                            trained_weight=train_weight, init_weight=initialization,
+                            criteria=args.criteria, head_prune_ratio=args.rate,
+                            mlp_prune_ratio=mlp_ratio, return_mask_only=True)
+                    elif args.vit_prune_target == 'head':
+                        print('[ViT] 使用Head级别准结构化剪枝 (RSST)')
+                        mask = vit_pruning_utils.prune_model_custom_fillback_vit_by_head(
+                            model, mask_dict=current_mask, train_loader=train_loader,
+                            trained_weight=train_weight, init_weight=initialization,
+                            criteria=args.criteria, prune_ratio=args.rate,
+                            return_mask_only=True)
+                    elif args.vit_prune_target == 'mlp':
+                        raise NotImplementedError('单独MLP剪枝尚未实现，请使用both模式')
+                else:
+                    print('[ViT] 使用Element-wise非结构化剪枝 (RSST)')
+                    mask = vit_pruning_utils.prune_model_custom_fillback_vit(
+                        model, mask_dict=current_mask, train_loader=train_loader,
+                        trained_weight=train_weight, init_weight=initialization,
+                        criteria=args.criteria, fillback_rate=0.0, 
+                        return_mask_only=True)
+            else:
+                mask = prune_model_custom_fillback(
+                    model, mask_dict=current_mask, train_loader=train_loader,
+                    trained_weight=train_weight, init_weight=initialization,
+                    criteria=args.criteria, fillback_rate=0.0, 
+                    return_mask_only=True)
             # 传递正则化索引
             # passer.current_mask = current_mask
             passer.refill_mask = mask
         else:
             ValueError('错误:没有那个struct算法')
 
-
-        check_sparsity(model, conv1=False)
+        # 检查最终剪枝效果
+        if vit_pruning_utils.is_vit_model(model):
+            vit_pruning_utils.check_sparsity_vit(model, prune_patch_embed=False)
+        else:
+            check_sparsity(model, conv1=False)
 
         optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                     momentum=args.momentum,
@@ -353,12 +565,36 @@ def main():
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=decreasing_lr, gamma=0.1)
 
 def update_reg(passer, pruner, model, state, i, j):
-    #TODO 更新正则化
+    """
+    更新正则化参数
+    
+    对于准结构化剪枝（包括ViT的head级别剪枝），正则化仍然适用：
+    - refill_mask标记哪些weights/heads应该被剪枝（mask=0）
+    - 正则化逐渐压缩这些weights，实现渐进式剪枝
+    """
+    # 如果没有refill_mask或current_mask，跳过
+    if passer.refill_mask is None or passer.current_mask is None:
+        return
+    
+    is_vit = vit_pruning_utils.is_vit_model(model)
 
     for name, m in model.named_modules():
         # 检查模块是否为卷积层或线性层
-        if isinstance(m, nn.Conv2d) :
+        should_process = False
+        if isinstance(m, nn.Conv2d) and not is_vit:
             if name != 'conv1':
+                should_process = True
+        elif isinstance(m, nn.Linear) and is_vit:
+            if 'attn' in name or 'mlp' in name:
+                should_process = True
+        
+        if should_process:
+                # 检查mask是否存在
+                if name not in passer.refill_mask:
+                    continue
+                if name + '.weight_mask' not in passer.current_mask:
+                    continue
+                    
                 refill_mask = passer.refill_mask[name].flatten()
                 current_mask = passer.current_mask[name + '.weight_mask'].flatten()
                 if refill_mask.shape != current_mask.shape:
@@ -459,7 +695,7 @@ def train(state,train_loader, model, criterion, optimizer, epoch, passer, pruner
     return top1.avg
 def apply_reg(pruner, model, passer):
     # 遍历模型中的所有模块
-    print('应用正则化到梯度')
+    # print('应用正则化到梯度')
     for name, m in model.named_modules():
         # 检查当前模块名称是否在正则化规则字典中
         if name in pruner.reg:

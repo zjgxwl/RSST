@@ -9,11 +9,15 @@ from models.shufflenet import shufflenet_v2_x1_0
 from models.resnets_2fc import resnet20 as resnet20_2fc
 from models.mobilenet import MobileNet, MobileNet1, MobileNet2, MobileNet4, MobileNet3, MobileNet5
 from models.resnet12 import resnet12
-from advertorch.utils import NormalizeByChannelMeanStd
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 from dataset import *
+from imagenet_dataset import imagenet_dataloaders
 from models.vgg import vgg16_bn
 from models.resnet_grasp import resnet32 as wrn32
 from models.sparse_resnet20 import *
+from models.vit import vit_tiny, vit_small, vit_base
+from models.vit_imagenet import vit_small_imagenet, vit_base_imagenet, vit_large_imagenet
 def setup_model_dataset(args):
     trigger_set_dataloader = None
     if args.dataset == 'cifar10':
@@ -44,6 +48,20 @@ def setup_model_dataset(args):
             mean=[0.5071, 0.4866, 0.4409], std=[0.2673, 0.2564, 0.2762])
         train_set_loader, val_loader, test_loader = cifar100_dataloaders(batch_size= args.batch_size, data_dir =args.data)
 
+    elif args.dataset == 'imagenet':
+        classes = 1000
+        train_number = 1281167  # ImageNet训练集大小
+        normalization = NormalizeByChannelMeanStd(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        print("⚠️  注意: ImageNet数据集需要手动下载并指定路径")
+        print(f"   数据路径: {args.data}")
+        
+        train_set_loader, val_loader, test_loader = imagenet_dataloaders(
+            batch_size=args.batch_size, 
+            data_dir=args.data,
+            num_workers=args.workers if hasattr(args, 'workers') else 4
+        )
+    
     elif args.dataset == 'tiny-imagenet':
         classes = 200
         train_number = 90000
@@ -123,6 +141,33 @@ def setup_model_dataset(args):
         model = wrn32(dataset=args.dataset)
     elif args.arch == 'sparseresnet20':
         model = SparseResNet20()
+    elif args.arch == 'vit_tiny':
+        print('build model: vit_tiny')
+        img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
+        pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
+        model = vit_tiny(num_classes=classes, img_size=img_size, pretrained=pretrained)
+    elif args.arch == 'vit_small':
+        print('build model: vit_small')
+        img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
+        pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
+        model = vit_small(num_classes=classes, img_size=img_size, pretrained=pretrained)
+    elif args.arch == 'vit_base':
+        print('build model: vit_base')
+        img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
+        pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
+        model = vit_base(num_classes=classes, img_size=img_size, pretrained=pretrained)
+    elif args.arch == 'vit_small_imagenet':
+        print('build model: vit_small_imagenet')
+        pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
+        model = vit_small_imagenet(num_classes=classes, pretrained=pretrained)
+    elif args.arch == 'vit_base_imagenet':
+        print('build model: vit_base_imagenet')
+        pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
+        model = vit_base_imagenet(num_classes=classes, pretrained=pretrained)
+    elif args.arch == 'vit_large_imagenet':
+        print('build model: vit_large_imagenet')
+        pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
+        model = vit_large_imagenet(num_classes=classes, pretrained=pretrained)
     else:
         raise ValueError('unknow model')
 

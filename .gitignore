@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# 实验输出和日志
+output/
+logs/
+logs_*/
+launch_logs/*.log
+wandb/
+experiments/
+test_output/
+cifar100_*/
+
+# 数据集
+data/
+
+# 模型文件和checkpoints
+init_model/
+*.pth
+*.pth.tar
+*.ckpt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 配置文件（如果包含敏感信息）
+configs/

@@ -1,8 +1,9 @@
 from .conv import SparseConv2D
 import torch 
 import torch.nn as nn
-from torchvision.models.utils import load_state_dict_from_url
-from advertorch.utils import NormalizeByChannelMeanStd
+from torch.hub import load_state_dict_from_url
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 
 
 __all__ = [
