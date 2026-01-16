@@ -22,7 +22,8 @@ import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data.sampler import SubsetRandomSampler
-from advertorch.utils import NormalizeByChannelMeanStd
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 
 from utils import *
 from pruning_utils import *

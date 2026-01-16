@@ -61,7 +61,7 @@ def setup_model_dataset(args):
             data_dir=args.data,
             num_workers=args.workers if hasattr(args, 'workers') else 4
         )
-    
+
     elif args.dataset == 'tiny-imagenet':
         classes = 200
         train_number = 90000

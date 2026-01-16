@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
-from advertorch.utils import NormalizeByChannelMeanStd
-from conv_ops import conv_skip_zero_channels
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
+# from conv_ops import conv_skip_zero_channels  # 注释掉，ViT不需要
 
 def _weights_init(m):
     if isinstance(m, nn.Linear):

@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
-from advertorch.utils import NormalizeByChannelMeanStd
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 from .channel_selection import channel_selection
 # from utils.common_utils import try_cuda
 # from .init_utils import weights_init

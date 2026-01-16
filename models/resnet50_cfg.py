@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from .channel_selection import channel_selection
-from advertorch.utils import NormalizeByChannelMeanStd
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 __all__ = ['resnet50_official']
 
 model_urls = {

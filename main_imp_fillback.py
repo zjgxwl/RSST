@@ -34,12 +34,14 @@ import vit_structured_pruning  # 新增：结构化剪枝模块
 import vit_pruning_utils_head_mlp  # 新增：Head+MLP组合剪枝模块
 
 from reg_pruner_files import reg_pruner
-import wandb
+# 注释掉wandb以提升训练速度
+# import wandb
 
 # 设置 CUDA_VISIBLE_DEVICES 环境变量
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+# 注释掉wandb环境变量设置以提升训练速度
 # 设置 WANDB_API_KEY 环境变量
-os.environ["WANDB_API_KEY"] = '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'
+# os.environ["WANDB_API_KEY"] = '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'
 
 
 parser = argparse.ArgumentParser(description='PyTorch Iterative Pruning')
@@ -102,48 +104,49 @@ def main():
     args.use_sparse_conv = False
     print(args)
     
+    # 注释掉WandB初始化以提升训练速度
     # 初始化WandB - 灵活的实验名称
-    if args.exp_name:
-        # 用户自定义名称
-        wdb_name = args.exp_name
-    else:
-        # 自动生成名称
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
-        
-        # 基础信息
-        name_parts = [args.struct, args.arch, args.dataset]
-        
-        # 添加关键参数
-        if args.struct == 'rsst':
-            name_parts.append(f"sched_{args.RST_schedule}")
-            name_parts.append(f"reg_{args.reg_granularity_prune}")
-            if args.RST_schedule == 'exp_custom_exponents':
-                name_parts.append(f"exp{args.exponents}")
-        elif args.struct == 'refill':
-            name_parts.append(f"fill_{args.fillback_rate}")
-        
-        name_parts.append(f"crit_{args.criteria}")
-        name_parts.append(f"rate_{args.rate}")
-        
-        # 添加预训练标识
-        if hasattr(args, 'vit_pretrained') and args.vit_pretrained:
-            name_parts.append("pretrained")
-        
-        # 添加结构化剪枝标识
-        if hasattr(args, 'vit_structured') and args.vit_structured:
-            if hasattr(args, 'vit_prune_target'):
-                name_parts.append(f"struct_{args.vit_prune_target}")
-            else:
-                name_parts.append("struct_head")
-        
-        # 添加时间戳
-        name_parts.append(timestamp)
-        
-        wdb_name = '_'.join(name_parts)
-    
-    print(f'WandB实验名称: {wdb_name}')
-    wandb.init(project='RSST', entity='ycx', name=wdb_name, config=vars(parser.parse_args()))
+    # if args.exp_name:
+    #     # 用户自定义名称
+    #     wdb_name = args.exp_name
+    # else:
+    #     # 自动生成名称
+    #     import datetime
+    #     timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
+    #     
+    #     # 基础信息
+    #     name_parts = [args.struct, args.arch, args.dataset]
+    #     
+    #     # 添加关键参数
+    #     if args.struct == 'rsst':
+    #         name_parts.append(f"sched_{args.RST_schedule}")
+    #         name_parts.append(f"reg_{args.reg_granularity_prune}")
+    #         if args.RST_schedule == 'exp_custom_exponents':
+    #             name_parts.append(f"exp{args.exponents}")
+    #     elif args.struct == 'refill':
+    #         name_parts.append(f"fill_{args.fillback_rate}")
+    #     
+    #     name_parts.append(f"crit_{args.criteria}")
+    #     name_parts.append(f"rate_{args.rate}")
+    #     
+    #     # 添加预训练标识
+    #     if hasattr(args, 'vit_pretrained') and args.vit_pretrained:
+    #         name_parts.append("pretrained")
+    #     
+    #     # 添加结构化剪枝标识
+    #     if hasattr(args, 'vit_structured') and args.vit_structured:
+    #         if hasattr(args, 'vit_prune_target'):
+    #             name_parts.append(f"struct_{args.vit_prune_target}")
+    #         else:
+    #             name_parts.append("struct_head")
+    #     
+    #     # 添加时间戳
+    #     name_parts.append(timestamp)
+    #     
+    #     wdb_name = '_'.join(name_parts)
+    # 
+    # print(f'WandB实验名称: {wdb_name}')
+    # wandb.init(project='RSST', entity='ycx', name=wdb_name, config=vars(parser.parse_args()))
     print('*'*50)
     print('conv1 included for prune and rewind: {}'.format(args.conv1))
     print('fc included for rewind: {}'.format(args.fc))
@@ -156,7 +159,8 @@ def main():
 
     # prepare dataset 
     model, train_loader, val_loader, test_loader = setup_model_dataset(args)
-    wandb.watch(model, log='all', log_freq=1, log_graph=True)
+    # 注释掉wandb.watch以提升训练速度
+    # wandb.watch(model, log='all', log_freq=1, log_graph=True)
     model.cuda()
 
 
@@ -320,12 +324,14 @@ def main():
             remain_weight = vit_pruning_utils.check_sparsity_vit(model, prune_patch_embed=False)
         else:
             remain_weight = check_sparsity(model, conv1=False)
-        wandb.log({'remain_weight': remain_weight})
+        # 注释掉wandb.log以提升训练速度
+        # wandb.log({'remain_weight': remain_weight})
         if state > 0 and passer.args.struct == 'rsst':
             passer.reg_plot_init = 0
 
             passer.reg_plot = []
-            wandb.log({'reg_lambd': passer.reg_plot_init})
+            # 注释掉wandb.log以提升训练速度
+            # wandb.log({'reg_lambd': passer.reg_plot_init})
             pruner = reg_pruner.Pruner(model, args, passer)  # 初始化剪枝构造函数
         for epoch in range(start_epoch, args.epochs):
 
@@ -343,8 +349,15 @@ def main():
             test_tacc = validate(test_loader, model, criterion)
 
             scheduler.step()
-            # 记录训练损失和准确率
-            wandb.log({'prune_times': state, 'epoch': epoch,  'accuracy': acc, 'val_accuracy': tacc, 'test_accuracy': test_tacc, 'accuracy': acc})
+            # 注释掉wandb.log以提升训练速度
+            # 记录训练损失和准确率（epoch级别，减少网络请求频率）
+            # wandb.log({
+            #     'prune_times': state, 
+            #     'epoch': epoch,  
+            #     'train_accuracy': acc, 
+            #     'val_accuracy': tacc, 
+            #     'test_accuracy': test_tacc
+            # })
 
             all_result['train'].append(acc)
             all_result['ta'].append(tacc)
@@ -365,30 +378,35 @@ def main():
                 'init_weight': initialization
             }, is_SA_best=is_best_sa, pruning=state, save_path=args.save_dir)
         
-            plt.plot(all_result['train'], label='train_acc')
-            plt.plot(all_result['ta'], label='val_acc')
-            plt.plot(all_result['test_ta'], label='test_acc')
-            plt.legend()
-            plt.savefig(os.path.join(args.save_dir, str(state)+'net_train.png'))
-            plt.close()
+            # 注释掉绘图代码以提升训练速度
+            # plt.plot(all_result['train'], label='train_acc')
+            # plt.plot(all_result['ta'], label='val_acc')
+            # plt.plot(all_result['test_ta'], label='test_acc')
+            # plt.legend()
+            # plt.savefig(os.path.join(args.save_dir, str(state)+'net_train.png'))
+            # plt.close()
 
         # 在训练后（finetuning）将正则化的项剪掉
         if state > 0 and passer.args.struct == 'rsst':
             # passer.reg_plot_init = 0
             passer.reg_plot_dict[state] = passer.reg_plot
             # print('reg_plot_dict',passer.reg_plot_dict)
+            # 注释掉绘图代码以提升训练速度
             # 绘制正则化lambda折线图
-            plt.figure(figsize=(10, 5))  # 可以调整图的大小
-            plt.plot(range(len(passer.reg_plot)), passer.reg_plot, marker='o', linestyle='-', color='b')  # 折线图，带圆形标记
+            # plt.figure(figsize=(10, 5))  # 可以调整图的大小
+            # plt.plot(range(len(passer.reg_plot)), passer.reg_plot, marker='o', linestyle='-', color='b')  # 折线图，带圆形标记
 
             # 添加标题和坐标轴标签
-            plt.title("Regularization Parameter Changes Over Iterations")
-            plt.xlabel("Iterations")
-            plt.ylabel("Lambda (Regularization Parameter)")
+            # plt.title("Regularization Parameter Changes Over Iterations")
+            # plt.xlabel("Iterations")
+            # plt.ylabel("Lambda (Regularization Parameter)")
             # 可选：添加网格
-            plt.grid(True)
-            # 显示图表
-            plt.show()
+            # plt.grid(True)
+            # 保存图表（服务器环境不需要显示）
+            # reg_plot_path = os.path.join(args.save_dir, f'reg_plot_state_{state}.png')
+            # plt.savefig(reg_plot_path)
+            # plt.close()
+            # print(f'正则化lambda折线图已保存到: {reg_plot_path}')
 
             # 遍历模型的所有模块，并为每个卷积层/线性层进行处理
             is_vit = vit_pruning_utils.is_vit_model(model)
@@ -454,17 +472,18 @@ def main():
         else:
             # ========== ResNet剪枝 (原有逻辑) ==========
             pruning_model(model, args.rate, conv1=False)
-        remain_weight_after = check_sparsity(model, conv1=False)
+            remain_weight_after = check_sparsity(model, conv1=False)
             
             # 提取mask
-        current_mask = extract_mask(model.state_dict())
-        passer.current_mask = current_mask
+            current_mask = extract_mask(model.state_dict())
+            passer.current_mask = current_mask
             
             # 移除剪枝重参数化
-        remove_prune(model, conv1=False)
+            remove_prune(model, conv1=False)
         
-        if remain_weight_after is not None:
-            wandb.log({'remain_weight_after': remain_weight_after})
+        # 注释掉wandb.log以提升训练速度
+        # if remain_weight_after is not None:
+        #     wandb.log({'remain_weight_after': remain_weight_after})
 
         model.load_state_dict(initialization)
         
@@ -692,7 +711,8 @@ def train(state,train_loader, model, criterion, optimizer, epoch, passer, pruner
                     epoch, i, len(train_loader), end-start, loss=losses, top1=top1))
 
             start = time.time()
-    wandb.log({'train_batch_time': end - start, 'loss': losses.avg, 'top1_acc': top1.avg})
+    # 减少wandb.log频率：只在epoch结束时记录，避免频繁网络请求
+    # wandb.log({'train_batch_time': end - start, 'loss': losses.avg, 'top1_acc': top1.avg})
     print('train_accuracy {top1.avg:.3f}'.format(top1=top1))
 
     return top1.avg

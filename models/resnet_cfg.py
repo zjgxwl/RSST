@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torchvision.models
 from .channel_selection import channel_selection
-from advertorch.utils import NormalizeByChannelMeanStd
+# from advertorch.utils import NormalizeByChannelMeanStd
+from normalize_utils import NormalizeByChannelMeanStd  # 自定义实现，功能相同
 from .wrappers import TimeWrappedConv2d, TimeWrapper
 
 __all__ = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']
