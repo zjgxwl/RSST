@@ -312,6 +312,9 @@ def main():
 
     pruner = None
     for state in range(start_state, args.pruning_times):
+        # 记录当前state开始时间
+        state_start_time = time.time()
+        
         # 监视模型
 
         print('******************************************')
@@ -588,6 +591,14 @@ def main():
                                     momentum=args.momentum,
                                     weight_decay=args.weight_decay)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=decreasing_lr, gamma=0.1)
+        
+        # 打印当前state耗时
+        state_end_time = time.time()
+        state_duration = state_end_time - state_start_time
+        state_duration_minutes = state_duration / 60.0
+        print('=' * 80)
+        print(f'⏱️  State {state} completed! Time elapsed: {state_duration_minutes:.2f} minutes ({state_duration:.1f} seconds)')
+        print('=' * 80)
 
 def update_reg(passer, pruner, model, state, i, j):
     """
@@ -648,7 +659,7 @@ def update_reg(passer, pruner, model, state, i, j):
                     passer.reg_plot_init = np.exp(passer.reg_plot_init)
                     passer.reg_plot.append(passer.reg_plot_init)
                 if passer.args.RST_schedule == 'exp_custom':
-                    print('更新正则化参数lambda')
+                    #print('更新正则化参数lambda')
                     e = math.exp(1)
                     ceil = 3e-4
                     weight_start = 1 / (e - 1) * passer.args.reg_granularity_prune * (math.exp((i + 1) / j) - 1)
@@ -657,7 +668,7 @@ def update_reg(passer, pruner, model, state, i, j):
                     passer.reg_plot.append(weight_start)
 
                 if passer.args.RST_schedule == 'exp_custom_exponents':
-                    print('更新正则化参数lambda')
+                    #print('更新正则化参数lambda')
                     e = math.exp(1)
                     ceil = 3e-4
                     weight_start = 1 / (e - 1) * passer.args.reg_granularity_prune * (math.exp((i + 1) ** args.exponents / j ** args.exponents) - 1)
