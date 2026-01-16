@@ -130,7 +130,9 @@ def prune_model_custom_fillback_vit_head_and_mlp(
         if criteria == 'remain':
             importance = mask_reshaped.sum(dim=[0, 2, 3])
         elif criteria == 'magnitude':
-            weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+            # 处理可能存在prune的情况：优先使用weight_orig，否则使用weight
+            weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+            weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
             importance = weight.abs().sum(dim=[0, 2, 3])
         elif criteria == 'l1':
             if name in feature_maps:
@@ -139,7 +141,8 @@ def prune_model_custom_fillback_vit_head_and_mlp(
                 feat = feat.view(B, N, 3, num_heads, head_dim)
                 importance = feat.abs().mean(dim=[0, 1, 2, 4])  # [num_heads]
             else:
-                weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
                 importance = weight.abs().sum(dim=[0, 2, 3])
         elif criteria == 'l2':
             if name in feature_maps:
@@ -148,10 +151,12 @@ def prune_model_custom_fillback_vit_head_and_mlp(
                 feat = feat.view(B, N, 3, num_heads, head_dim)
                 importance = (feat ** 2).mean(dim=[0, 1, 2, 4]).sqrt()
             else:
-                weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
                 importance = (weight ** 2).sum(dim=[0, 2, 3]).sqrt()
         elif criteria == 'saliency':
-            weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+            weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+            weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
             importance = weight.abs().sum(dim=[0, 2, 3])
         else:
             raise ValueError(f"Unknown criteria: {criteria}")
@@ -216,7 +221,8 @@ def prune_model_custom_fillback_vit_head_and_mlp(
             if criteria == 'remain':
                 importance = mask_reshaped.sum(dim=[0, 2, 3])
             elif criteria == 'magnitude':
-                weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
                 importance = weight.abs().sum(dim=[0, 2, 3])
             elif criteria == 'l1':
                 if name in feature_maps:
@@ -225,7 +231,8 @@ def prune_model_custom_fillback_vit_head_and_mlp(
                     feat = feat.view(B, N, 3, num_heads, head_dim)
                     importance = feat.abs().mean(dim=[0, 1, 2, 4])
                 else:
-                    weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+                    weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                    weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
                     importance = weight.abs().sum(dim=[0, 2, 3])
             elif criteria == 'l2':
                 if name in feature_maps:
@@ -234,10 +241,12 @@ def prune_model_custom_fillback_vit_head_and_mlp(
                     feat = feat.view(B, N, 3, num_heads, head_dim)
                     importance = (feat ** 2).mean(dim=[0, 1, 2, 4]).sqrt()
                 else:
-                    weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+                    weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                    weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
                     importance = (weight ** 2).sum(dim=[0, 2, 3]).sqrt()
             elif criteria == 'saliency':
-                weight = trained_weight[name + '.weight'].view(3, num_heads, head_dim, embed_dim)
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key].view(3, num_heads, head_dim, embed_dim)
                 importance = weight.abs().sum(dim=[0, 2, 3])
         
         # 根据排序模式选择保留的heads
@@ -317,24 +326,28 @@ def prune_model_custom_fillback_vit_head_and_mlp(
             importance = mask.sum(dim=1)  # [hidden_dim]
         elif criteria == 'magnitude':
             # 每个neuron的权重绝对值和
-            weight = trained_weight[name + '.weight']
+            weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+            weight = trained_weight[weight_key]
             importance = weight.abs().sum(dim=1)  # [hidden_dim]
         elif criteria == 'l1':
             if name in feature_maps:
                 feat = feature_maps[name]  # [B, N, hidden_dim]
                 importance = feat.abs().mean(dim=[0, 1])  # [hidden_dim]
             else:
-                weight = trained_weight[name + '.weight']
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key]
                 importance = weight.abs().sum(dim=1)
         elif criteria == 'l2':
             if name in feature_maps:
                 feat = feature_maps[name]
                 importance = (feat ** 2).mean(dim=[0, 1]).sqrt()
             else:
-                weight = trained_weight[name + '.weight']
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key]
                 importance = (weight ** 2).sum(dim=1).sqrt()
         elif criteria == 'saliency':
-            weight = trained_weight[name + '.weight']
+            weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+            weight = trained_weight[weight_key]
             importance = weight.abs().sum(dim=1)
         else:
             raise ValueError(f"Unknown criteria: {criteria}")
@@ -400,24 +413,28 @@ def prune_model_custom_fillback_vit_head_and_mlp(
             if criteria == 'remain':
                 importance = mask.sum(dim=1)
             elif criteria == 'magnitude':
-                weight = trained_weight[name + '.weight']
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key]
                 importance = weight.abs().sum(dim=1)
             elif criteria == 'l1':
                 if name in feature_maps:
                     feat = feature_maps[name]
                     importance = feat.abs().mean(dim=[0, 1])
                 else:
-                    weight = trained_weight[name + '.weight']
+                    weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                    weight = trained_weight[weight_key]
                     importance = weight.abs().sum(dim=1)
             elif criteria == 'l2':
                 if name in feature_maps:
                     feat = feature_maps[name]
                     importance = (feat ** 2).mean(dim=[0, 1]).sqrt()
                 else:
-                    weight = trained_weight[name + '.weight']
+                    weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                    weight = trained_weight[weight_key]
                     importance = (weight ** 2).sum(dim=1).sqrt()
             elif criteria == 'saliency':
-                weight = trained_weight[name + '.weight']
+                weight_key = name + '.weight_orig' if (name + '.weight_orig') in trained_weight else name + '.weight'
+                weight = trained_weight[weight_key]
                 importance = weight.abs().sum(dim=1)
             
             num_to_keep = max(1, int(hidden_dim * (1 - mlp_prune_ratio)))

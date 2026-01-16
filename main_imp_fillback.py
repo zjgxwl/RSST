@@ -61,7 +61,7 @@ parser.add_argument('--checkpoint', type=str, default=None, help='checkpoint fil
 parser.add_argument('--init', type=str, default='init_model/cifar100_output_resnet20_l1_x_init.pth.tar', help='init file')
 
 ##################################### training setting #################################################
-parser.add_argument('--batch_size', type=int, default=3128, help='batch size')
+parser.add_argument('--batch_size', type=int, default=128, help='batch size')
 parser.add_argument('--workers', type=int, default=4, help='number of data loading workers')
 parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
@@ -450,7 +450,10 @@ def main():
         all_result['train'] = []
         all_result['test_ta'] = []
         all_result['ta'] = []
-        train_weight = model.state_dict()  # 保存训练后的模型权重
+        
+        # ⭐ 在非结构化剪枝之前保存训练后的权重（关键：必须在pruning_model_vit之前！）
+        train_weight = model.state_dict()  # 保存完整的训练后权重，用于准结构化剪枝的重要性计算
+        
         best_sa = 0
         start_epoch = 0
 
