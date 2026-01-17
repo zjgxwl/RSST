@@ -34,7 +34,7 @@ from reg_pruner_files import reg_pruner
 import wandb
 
 # 设置 CUDA_VISIBLE_DEVICES 环境变量
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+# os.environ["CUDA_VISIBLE_DEVICES"] = '3'  # 已注释：由启动脚本控制GPU分配
 
 
 parser = argparse.ArgumentParser(description='PyTorch Iterative Pruning')

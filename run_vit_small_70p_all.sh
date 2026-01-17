@@ -30,7 +30,8 @@ DATA_PATH_100="data/cifar100"
 PRETRAINED="--vit_pretrained"
 VIT_STRUCTURED="--vit_structured"
 PRUNE_TARGET="--vit_prune_target both"
-INIT_FILE="init_model/vit_small_cifar10_pretrained_init.pth.tar"
+INIT_FILE_CIFAR10="init_model/vit_small_cifar10_pretrained_init.pth.tar"
+INIT_FILE_CIFAR100="init_model/vit_small_cifar100_pretrained_init.pth.tar"
 
 # 剪枝配置（70%剪枝率）
 CRITERIA="--criteria magnitude"
@@ -65,10 +66,10 @@ EXP_NAME_1="cifar10_refill_70p_${TIMESTAMP}"
 LOG_FILE_1="logs_vit_small_70p/${EXP_NAME_1}.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 启动实验1: CIFAR-10 + Refill (70%剪枝)"
+echo "🚀 启动实验1: CIFAR-10 + Refill (70%剪枝) [GPU 0]"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-nohup python -u main_imp_fillback.py \
+CUDA_VISIBLE_DEVICES=0 nohup /root/miniconda3/envs/structlth/bin/python -u main_imp_fillback.py \
     --arch $ARCH \
     --dataset $DATASET_CIFAR10 \
     --data $DATA_PATH_10 \
@@ -85,7 +86,7 @@ nohup python -u main_imp_fillback.py \
     $SORTING_MODE \
     $LR \
     --fillback_rate 0.0 \
-    --init $INIT_FILE \
+    --init $INIT_FILE_CIFAR10 \
     --save_dir $SAVE_DIR_1 \
     --exp_name $EXP_NAME_1 \
     > $LOG_FILE_1 2>&1 &
@@ -104,10 +105,10 @@ EXP_NAME_2="cifar10_rsst_70p_${TIMESTAMP}"
 LOG_FILE_2="logs_vit_small_70p/${EXP_NAME_2}.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 启动实验2: CIFAR-10 + RSST (70%剪枝)"
+echo "🚀 启动实验2: CIFAR-10 + RSST (70%剪枝) [GPU 0]"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-nohup python -u main_imp_fillback.py \
+CUDA_VISIBLE_DEVICES=0 nohup /root/miniconda3/envs/structlth/bin/python -u main_imp_fillback.py \
     --arch $ARCH \
     --dataset $DATASET_CIFAR10 \
     --data $DATA_PATH_10 \
@@ -126,7 +127,7 @@ nohup python -u main_imp_fillback.py \
     $REG_GRANULARITY \
     $RST_SCHEDULE \
     $EXPONENTS \
-    --init $INIT_FILE \
+    --init $INIT_FILE_CIFAR10 \
     --save_dir $SAVE_DIR_2 \
     --exp_name $EXP_NAME_2 \
     > $LOG_FILE_2 2>&1 &
@@ -145,10 +146,10 @@ EXP_NAME_3="cifar100_refill_70p_${TIMESTAMP}"
 LOG_FILE_3="logs_vit_small_70p/${EXP_NAME_3}.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 启动实验3: CIFAR-100 + Refill (70%剪枝)"
+echo "🚀 启动实验3: CIFAR-100 + Refill (70%剪枝) [GPU 1]"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-nohup python -u main_imp_fillback.py \
+CUDA_VISIBLE_DEVICES=1 nohup /root/miniconda3/envs/structlth/bin/python -u main_imp_fillback.py \
     --arch $ARCH \
     --dataset $DATASET_CIFAR100 \
     --data $DATA_PATH_100 \
@@ -165,7 +166,7 @@ nohup python -u main_imp_fillback.py \
     $SORTING_MODE \
     $LR \
     --fillback_rate 0.0 \
-    --init $INIT_FILE \
+    --init $INIT_FILE_CIFAR100 \
     --save_dir $SAVE_DIR_3 \
     --exp_name $EXP_NAME_3 \
     > $LOG_FILE_3 2>&1 &
@@ -184,10 +185,10 @@ EXP_NAME_4="cifar100_rsst_70p_${TIMESTAMP}"
 LOG_FILE_4="logs_vit_small_70p/${EXP_NAME_4}.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 启动实验4: CIFAR-100 + RSST (70%剪枝)"
+echo "🚀 启动实验4: CIFAR-100 + RSST (70%剪枝) [GPU 1]"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-nohup python -u main_imp_fillback.py \
+CUDA_VISIBLE_DEVICES=1 nohup /root/miniconda3/envs/structlth/bin/python -u main_imp_fillback.py \
     --arch $ARCH \
     --dataset $DATASET_CIFAR100 \
     --data $DATA_PATH_100 \
@@ -206,7 +207,7 @@ nohup python -u main_imp_fillback.py \
     $REG_GRANULARITY \
     $RST_SCHEDULE \
     $EXPONENTS \
-    --init $INIT_FILE \
+    --init $INIT_FILE_CIFAR100 \
     --save_dir $SAVE_DIR_4 \
     --exp_name $EXP_NAME_4 \
     > $LOG_FILE_4 2>&1 &
@@ -224,11 +225,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ 全部4个实验已启动完成！"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "【进程ID】"
-echo "  实验1 (CIFAR-10  Refill): $PID_1"
-echo "  实验2 (CIFAR-10  RSST):   $PID_2"
-echo "  实验3 (CIFAR-100 Refill): $PID_3"
-echo "  实验4 (CIFAR-100 RSST):   $PID_4"
+echo "【进程ID & GPU分配】"
+echo "  实验1 (CIFAR-10  Refill) [GPU 0]: $PID_1"
+echo "  实验2 (CIFAR-10  RSST)   [GPU 0]: $PID_2"
+echo "  实验3 (CIFAR-100 Refill) [GPU 1]: $PID_3"
+echo "  实验4 (CIFAR-100 RSST)   [GPU 1]: $PID_4"
 echo ""
 echo "【日志文件】"
 echo "  实验1: $LOG_FILE_1"
@@ -253,13 +254,14 @@ echo ""
 echo "【Refill专用参数】"
 echo "  Fillback率: 0.0"
 echo ""
-echo "【预计时间】"
+echo "【预计时间】(双GPU加速 ⚡)"
 echo "  一个Epoch: ~1.2分钟"
 echo "  一个State (60 epochs): ~72分钟"
 echo "  单个实验 (16 states): ~19.2小时"
-echo "  四个实验并行: ~19-22小时（共享GPU）"
+echo "  双GPU并行 (每卡2实验): ~9-11小时 (时间减半！)"
 echo ""
 echo "【监控命令】"
+echo "  查看GPU: nvidia-smi"
 echo "  查看进程: ps aux | grep main_imp_fillback"
 echo "  查看日志: tail -f logs_vit_small_70p/*.log"
 echo "  查看进度: grep 'pruning state' logs_vit_small_70p/*.log"

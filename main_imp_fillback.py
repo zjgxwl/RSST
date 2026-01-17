@@ -38,7 +38,7 @@ from reg_pruner_files import reg_pruner
 # import wandb
 
 # 设置 CUDA_VISIBLE_DEVICES 环境变量
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+# os.environ["CUDA_VISIBLE_DEVICES"] = '0'  # 已注释：由启动脚本控制GPU分配
 # 注释掉wandb环境变量设置以提升训练速度
 # 设置 WANDB_API_KEY 环境变量
 # os.environ["WANDB_API_KEY"] = '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'
