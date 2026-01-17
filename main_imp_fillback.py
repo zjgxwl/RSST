@@ -32,6 +32,7 @@ from pruning_utils import *
 import vit_pruning_utils
 import vit_structured_pruning  # 新增：结构化剪枝模块
 import vit_pruning_utils_head_mlp  # 新增：Head+MLP组合剪枝模块
+import mamba_structured_pruning  # 新增：Mamba结构化剪枝模块
 
 from reg_pruner_files import reg_pruner
 # 注释掉wandb以提升训练速度
@@ -96,6 +97,15 @@ parser.add_argument('--mlp_prune_ratio', default=None, type=float,
                     help='MLP neuron pruning ratio (default: use same as --rate)')
 parser.add_argument('--sorting_mode', default='layer-wise', type=str, choices=['layer-wise', 'global'],
                     help='Sorting mode for ViT structured pruning: layer-wise (each layer independently) or global (all layers mixed)')
+
+# Mamba related arguments
+parser.add_argument('--mamba_pretrained', action='store_true', help='use pretrained model (for Mamba)')
+parser.add_argument('--mamba_structured', action='store_true', help='use structured pruning for Mamba (channel/neuron-level)')
+parser.add_argument('--mamba_prune_target', default='both', type=str, choices=['ssm', 'mlp', 'both'],
+                    help='Mamba structured pruning target: ssm (SSM out_proj), mlp (MLP neurons), both (ssm+mlp)')
+parser.add_argument('--mamba_mlp_prune_ratio', default=None, type=float,
+                    help='Mamba MLP neuron pruning ratio (default: use same as --rate)')
+
 best_sa = 0
 
 def main():
@@ -194,6 +204,12 @@ def main():
     initialization = torch.load(args.init)
     if 'state_dict' in initialization:
         initialization = initialization['state_dict']
+    
+    # ⭐ 将initialization移到正确的设备上（修复Refill时的设备不匹配bug）⭐
+    device = next(model.parameters()).device
+    for key in initialization.keys():
+        if isinstance(initialization[key], torch.Tensor):
+            initialization[key] = initialization[key].to(device)
     
     # ⭐⭐⭐ 验证是否为预训练模型（防止使用随机初始化）⭐⭐⭐
     if args.arch in ['vit_tiny', 'vit_small', 'vit_base'] and hasattr(args, 'vit_pretrained') and args.vit_pretrained:
@@ -324,6 +340,12 @@ def main():
         if 'normalize.mean' not in initialization:
             initialization['normalize.mean'] = new_initialization['normalize.mean']
             initialization['normalize.std'] = new_initialization['normalize.std']
+        
+        # ⭐ 将initialization移到正确的设备上（修复Refill时的设备不匹配bug）⭐
+        device = next(model.parameters()).device
+        for key in initialization.keys():
+            if isinstance(initialization[key], torch.Tensor):
+                initialization[key] = initialization[key].to(device)
         print('loading state:', start_state)
         print('loading from epoch: ',start_epoch, 'best_sa=', best_sa)
         all_result = {}
@@ -495,6 +517,7 @@ def main():
 
         # 根据模型类型选择剪枝函数
         is_vit = vit_pruning_utils.is_vit_model(model)
+        is_mamba = mamba_structured_pruning.is_mamba_model(model)
         
         if is_vit:
             # ========== ViT非结构化剪枝 (原有逻辑) ==========
@@ -507,6 +530,14 @@ def main():
             
             # 移除剪枝重参数化
             vit_pruning_utils.remove_prune_vit(model, prune_patch_embed=False)
+        
+        elif is_mamba:
+            # ========== Mamba结构化剪枝 (新增) ==========
+            print('[Mamba] 使用结构化剪枝（不做非结构化剪枝）')
+            # Mamba直接使用结构化剪枝，不需要mask
+            current_mask = {}
+            passer.current_mask = current_mask
+            remain_weight_after = None
             
         else:
             # ========== ResNet剪枝 (原有逻辑) ==========
@@ -529,7 +560,36 @@ def main():
         #########################################Refill/RSST Method###########################################################
         if args.struct == 'refill':
             print('执行Refill算法')
-            if is_vit:
+            if is_mamba:
+                # ========== Mamba结构化剪枝 (Refill方法) ==========
+                if args.mamba_structured:
+                    mlp_ratio = args.mamba_mlp_prune_ratio if args.mamba_mlp_prune_ratio is not None else args.rate
+                    
+                    if args.mamba_prune_target == 'both':
+                        print(f'[Mamba] 使用SSM+MLP混合结构化剪枝 (Refill)')
+                        print(f'  - SSM剪枝率: {args.rate}')
+                        print(f'  - MLP剪枝率: {mlp_ratio}')
+                        model_copy = deepcopy(model)
+                        mamba_structured_pruning.prune_mamba_hybrid(
+                            model_copy, ssm_ratio=args.rate, mlp_ratio=mlp_ratio, 
+                            method=args.sorting_mode)
+                        model = model_copy
+                    elif args.mamba_prune_target == 'ssm':
+                        print(f'[Mamba] 使用SSM结构化剪枝 (Refill)')
+                        model_copy = deepcopy(model)
+                        mamba_structured_pruning.prune_mamba_ssm_structured(
+                            model_copy, prune_ratio=args.rate, method=args.sorting_mode)
+                        model = model_copy
+                    elif args.mamba_prune_target == 'mlp':
+                        print(f'[Mamba] 使用MLP结构化剪枝 (Refill)')
+                        model_copy = deepcopy(model)
+                        mamba_structured_pruning.prune_mamba_mlp_structured(
+                            model_copy, prune_ratio=mlp_ratio, method=args.sorting_mode)
+                        model = model_copy
+                else:
+                    print('[Warning] Mamba模型必须使用--mamba_structured标志')
+                    raise ValueError('Mamba模型仅支持结构化剪枝')
+            elif is_vit:
                 # 判断是否使用准结构化剪枝
                 if args.vit_structured:
                     # 确定MLP剪枝率
@@ -570,7 +630,13 @@ def main():
         elif args.struct == 'rsst':
             print('执行RSST算法')
             # rsst剪枝功能 返回refill mask而不剪枝
-            if is_vit:
+            if is_mamba:
+                # ========== Mamba结构化剪枝 (RSST方法 - 仅生成mask用于训练时正则化) ==========
+                print('[Mamba] RSST模式：不预先剪枝，在训练中使用正则化')
+                # Mamba的RSST通过正则化实现，不需要预先剪枝
+                mask = {}
+                passer.refill_mask = mask
+            elif is_vit:
                 # 判断是否使用准结构化剪枝
                 if args.vit_structured:
                     # 确定MLP剪枝率
@@ -731,10 +797,23 @@ def train(state,train_loader, model, criterion, optimizer, epoch, passer, pruner
         # compute output
         output_clean = model(image)
         loss = criterion(output_clean, target)
+        
+        # Mamba RSST正则化（在loss中添加结构化稀疏正则化）
+        if state > 0 and args.struct == 'rsst' and mamba_structured_pruning.is_mamba_model(model):
+            # 计算RSST正则化强度（动态schedule）
+            reg_strength = mamba_structured_pruning.rsst_schedule_exp(
+                epoch, args.epochs, passer.args.reg_granularity_prune, args.exponents
+            )
+            # 添加结构化稀疏正则化
+            rsst_loss = mamba_structured_pruning.compute_mamba_structured_regularization(
+                model, reg_strength=reg_strength, reg_target=args.mamba_prune_target
+            )
+            loss = loss + rsst_loss
+        
         optimizer.zero_grad()
         loss.backward()
-        if state > 0  and args.struct == 'rsst':
-            # 更新正则化 注意设置更新间隔与更新阈值
+        if state > 0  and args.struct == 'rsst' and not mamba_structured_pruning.is_mamba_model(model):
+            # 更新正则化 注意设置更新间隔与更新阈值（仅对非Mamba模型）
             if passer.args.reg_granularity_prune * i < 1 :
                 update_reg(passer, pruner, model, state, i, j)
             #修改梯度 加入reg项

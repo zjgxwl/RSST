@@ -138,6 +138,12 @@ def main():
     
     initialization['normalize.mean'] = new_initialization['normalize.mean']
     initialization['normalize.std'] = new_initialization['normalize.std']
+    
+    # ⭐ 将initialization移到正确的设备上（修复Refill时的设备不匹配bug）⭐
+    device = next(model.parameters()).device
+    for key in initialization.keys():
+        if isinstance(initialization[key], torch.Tensor):
+            initialization[key] = initialization[key].to(device)
 
     print(initialization.keys())
     if not args.prune_type == 'lt':
@@ -187,6 +193,13 @@ def main():
         if 'normalize.mean' not in initialization:
             initialization['normalize.mean'] = new_initialization['normalize.mean']
             initialization['normalize.std'] = new_initialization['normalize.std']
+        
+        # ⭐ 将initialization移到正确的设备上（修复Refill时的设备不匹配bug）⭐
+        device = next(model.parameters()).device
+        for key in initialization.keys():
+            if isinstance(initialization[key], torch.Tensor):
+                initialization[key] = initialization[key].to(device)
+        
         print('loading state:', start_state)
         print('loading from epoch: ',start_epoch, 'best_sa=', best_sa)
         all_result = {}
