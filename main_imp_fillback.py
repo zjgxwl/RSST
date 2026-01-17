@@ -248,6 +248,13 @@ def main():
     initialization['normalize.std'] = new_initialization['normalize.std']
 
     print(initialization.keys())
+    
+    # ⭐ 再次确保所有tensor在正确设备上（防止后续从new_initialization复制导致设备不匹配）⭐
+    device = next(model.parameters()).device
+    for key in ['normalize.mean', 'normalize.std']:
+        if key in initialization and isinstance(initialization[key], torch.Tensor):
+            initialization[key] = initialization[key].to(device)
+    
     if not args.prune_type == 'lt':
         keys = list(initialization.keys())
         for key in keys:
@@ -276,6 +283,12 @@ def main():
         else:
             raise ValueError("❌ 无法识别模型类型：既没有head也没有fc层！请检查模型结构。")
         
+        # ⭐ 确保从new_initialization复制的权重也在正确设备上 ⭐
+        device = next(model.parameters()).device
+        for key in initialization.keys():
+            if isinstance(initialization[key], torch.Tensor):
+                initialization[key] = initialization[key].to(device)
+        
         model.load_state_dict(initialization)
     else:
         # lottery ticket (lt) - 也需要处理分类头不匹配的问题
@@ -301,6 +314,12 @@ def main():
                     print(f"⚠️  检测到fc类别数不匹配（{init_classes} → {new_classes}），使用新的fc层")
                     initialization['fc.weight'] = new_initialization['fc.weight']
                     initialization['fc.bias'] = new_initialization['fc.bias']
+        
+        # ⭐ 确保所有权重都在正确设备上 ⭐
+        device = next(model.parameters()).device
+        for key in initialization.keys():
+            if isinstance(initialization[key], torch.Tensor):
+                initialization[key] = initialization[key].to(device)
         
         model.load_state_dict(initialization)
         

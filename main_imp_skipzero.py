@@ -144,6 +144,11 @@ def main():
     for key in initialization.keys():
         if isinstance(initialization[key], torch.Tensor):
             initialization[key] = initialization[key].to(device)
+    
+    # ⭐ 再次确保normalize相关权重在正确设备上 ⭐
+    for key in ['normalize.mean', 'normalize.std']:
+        if key in initialization and isinstance(initialization[key], torch.Tensor):
+            initialization[key] = initialization[key].to(device)
 
     print(initialization.keys())
     if not args.prune_type == 'lt':
@@ -155,6 +160,13 @@ def main():
         initialization['fc.weight'] = new_initialization['fc.weight']
         initialization['fc.bias'] = new_initialization['fc.bias']
         initialization['conv1.weight'] = new_initialization['conv1.weight']
+        
+        # ⭐ 确保从new_initialization复制的权重也在正确设备上 ⭐
+        device = next(model.parameters()).device
+        for key in ['fc.weight', 'fc.bias', 'conv1.weight']:
+            if key in initialization and isinstance(initialization[key], torch.Tensor):
+                initialization[key] = initialization[key].to(device)
+        
         model.load_state_dict(initialization)
     else:
         print(initialization.keys())
@@ -185,6 +197,10 @@ def main():
         if 'normalize.mean' not in checkpoint['state_dict']:
             checkpoint['state_dict']['normalize.mean'] = new_initialization['normalize.mean']
             checkpoint['state_dict']['normalize.std'] = new_initialization['normalize.std']
+            # ⭐ 确保normalize权重在正确设备上 ⭐
+            device = next(model.parameters()).device
+            checkpoint['state_dict']['normalize.mean'] = checkpoint['state_dict']['normalize.mean'].to(device)
+            checkpoint['state_dict']['normalize.std'] = checkpoint['state_dict']['normalize.std'].to(device)
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
