@@ -195,6 +195,39 @@ def main():
     if 'state_dict' in initialization:
         initialization = initialization['state_dict']
     
+    # ⭐⭐⭐ 验证是否为预训练模型（防止使用随机初始化）⭐⭐⭐
+    if args.arch in ['vit_tiny', 'vit_small', 'vit_base'] and hasattr(args, 'vit_pretrained') and args.vit_pretrained:
+        # 检查ViT模型是否真的使用了预训练权重
+        test_key = 'blocks.0.attn.qkv.weight'
+        if test_key in initialization:
+            test_weight = initialization[test_key]
+            weight_std = test_weight.std().item()
+            
+            print("="*80)
+            print("🔍 预训练模型验证")
+            print("="*80)
+            print(f"初始化文件: {args.init}")
+            print(f"测试参数: {test_key}")
+            print(f"权重std: {weight_std:.6f}")
+            
+            # Xavier/Kaiming随机初始化的std通常在0.01-0.03范围
+            # 真正的预训练权重std通常>0.05
+            if weight_std < 0.05:
+                print(f"❌ 错误：初始化文件疑似随机初始化（std={weight_std:.6f} < 0.05）")
+                print(f"❌ 期望：预训练模型权重（std应该 > 0.05）")
+                print("="*80)
+                print("⚠️  建议解决方案：")
+                print("   1. 删除旧的初始化文件")
+                print("   2. 重新运行以生成真正的预训练初始化文件")
+                print("   3. 或者移除 --vit_pretrained 参数（使用随机初始化）")
+                print("="*80)
+                raise ValueError("初始化文件不是预训练模型！请检查初始化文件或移除 --vit_pretrained 参数")
+            else:
+                print(f"✓ 验证通过：确认是预训练模型（std={weight_std:.6f} > 0.05）")
+                print("="*80)
+        else:
+            print(f"⚠️  警告：无法找到测试参数 {test_key}，跳过验证")
+    
     initialization['normalize.mean'] = new_initialization['normalize.mean']
     initialization['normalize.std'] = new_initialization['normalize.std']
 
