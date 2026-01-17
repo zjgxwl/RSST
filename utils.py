@@ -18,6 +18,7 @@ from models.resnet_grasp import resnet32 as wrn32
 from models.sparse_resnet20 import *
 from models.vit import vit_tiny, vit_small, vit_base
 from models.vit_imagenet import vit_small_imagenet, vit_base_imagenet, vit_large_imagenet
+from models.mamba import mamba_tiny, mamba_small, mamba_base, mamba_small_imagenet, mamba_base_imagenet
 def setup_model_dataset(args):
     trigger_set_dataloader = None
     if args.dataset == 'cifar10':
@@ -168,6 +169,29 @@ def setup_model_dataset(args):
         print('build model: vit_large_imagenet')
         pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
         model = vit_large_imagenet(num_classes=classes, pretrained=pretrained)
+    elif args.arch == 'mamba_tiny':
+        print('build model: mamba_tiny')
+        img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
+        pretrained = args.mamba_pretrained if hasattr(args, 'mamba_pretrained') else False
+        model = mamba_tiny(num_classes=classes, img_size=img_size, pretrained=pretrained)
+    elif args.arch == 'mamba_small':
+        print('build model: mamba_small')
+        img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
+        pretrained = args.mamba_pretrained if hasattr(args, 'mamba_pretrained') else False
+        model = mamba_small(num_classes=classes, img_size=img_size, pretrained=pretrained)
+    elif args.arch == 'mamba_base':
+        print('build model: mamba_base')
+        img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
+        pretrained = args.mamba_pretrained if hasattr(args, 'mamba_pretrained') else False
+        model = mamba_base(num_classes=classes, img_size=img_size, pretrained=pretrained)
+    elif args.arch == 'mamba_small_imagenet':
+        print('build model: mamba_small_imagenet')
+        pretrained = args.mamba_pretrained if hasattr(args, 'mamba_pretrained') else False
+        model = mamba_small_imagenet(num_classes=classes, pretrained=pretrained)
+    elif args.arch == 'mamba_base_imagenet':
+        print('build model: mamba_base_imagenet')
+        pretrained = args.mamba_pretrained if hasattr(args, 'mamba_pretrained') else False
+        model = mamba_base_imagenet(num_classes=classes, pretrained=pretrained)
     else:
         raise ValueError('unknow model')
 
