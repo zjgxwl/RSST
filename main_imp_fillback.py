@@ -52,6 +52,7 @@ parser.add_argument('--data', type=str, default='data', help='location of the da
 parser.add_argument('--dataset', type=str, default='cifar100', help='dataset')
 parser.add_argument('--arch', type=str, default='res20s', help='model architecture')
 parser.add_argument('--vit_pretrained', action='store_true', help='use pretrained model (for ViT)')
+parser.add_argument('--vit_pretrained_21k', action='store_true', help='use ImageNet-21K pretrained model (for ViT, higher priority than vit_pretrained)')
 parser.add_argument('--file_name', type=str, default=None, help='dataset index')
 parser.add_argument('--seed', default=None, type=int, help='random seed')
 parser.add_argument('--save_dir', help='The directory used to save the trained models', default='cifar100_rsst_output_resnet20_l1_exp_custom_exponents4', type=str)
@@ -212,7 +213,8 @@ def main():
             initialization[key] = initialization[key].to(device)
     
     # ⭐⭐⭐ 验证是否为预训练模型（防止使用随机初始化）⭐⭐⭐
-    if args.arch in ['vit_tiny', 'vit_small', 'vit_base'] and hasattr(args, 'vit_pretrained') and args.vit_pretrained:
+    use_pretrained = (hasattr(args, 'vit_pretrained') and args.vit_pretrained) or (hasattr(args, 'vit_pretrained_21k') and args.vit_pretrained_21k)
+    if args.arch in ['vit_tiny', 'vit_small', 'vit_base'] and use_pretrained:
         # 检查ViT模型是否真的使用了预训练权重
         test_key = 'blocks.0.attn.qkv.weight'
         if test_key in initialization:

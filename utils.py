@@ -151,7 +151,8 @@ def setup_model_dataset(args):
         print('build model: vit_small')
         img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64
         pretrained = args.vit_pretrained if hasattr(args, 'vit_pretrained') else False
-        model = vit_small(num_classes=classes, img_size=img_size, pretrained=pretrained)
+        pretrained_21k = args.vit_pretrained_21k if hasattr(args, 'vit_pretrained_21k') else False
+        model = vit_small(num_classes=classes, img_size=img_size, pretrained=pretrained, pretrained_21k=pretrained_21k)
     elif args.arch == 'vit_base':
         print('build model: vit_base')
         img_size = 32 if args.dataset in ['cifar10', 'cifar100'] else 64

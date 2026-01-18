@@ -165,8 +165,15 @@ class VisionTransformer(nn.Module):
         return x
 
 
-def vit_small(num_classes=100, img_size=32, pretrained=False):
-    """ViT-Small for CIFAR"""
+def vit_small(num_classes=100, img_size=32, pretrained=False, pretrained_21k=False):
+    """ViT-Small for CIFAR
+    
+    Args:
+        num_classes: 类别数
+        img_size: 图像大小
+        pretrained: 是否使用ImageNet-1K预训练
+        pretrained_21k: 是否使用ImageNet-21K预训练（优先级高于pretrained）
+    """
     model = VisionTransformer(
         img_size=img_size,
         patch_size=4,
@@ -178,12 +185,20 @@ def vit_small(num_classes=100, img_size=32, pretrained=False):
         num_classes=num_classes
     )
     
-    if pretrained:
+    if pretrained_21k or pretrained:
         print("⚠️  Note: 加载预训练权重需要安装timm库 (pip install timm)")
         try:
             import timm
-            # 加载ImageNet预训练的ViT-Small
-            pretrained_model = timm.create_model('vit_small_patch16_224', pretrained=True)
+            # 根据参数选择预训练模型
+            if pretrained_21k:
+                model_name = 'vit_small_patch16_224_in21k'
+                print("🎯 使用ImageNet-21K预训练模型")
+            else:
+                model_name = 'vit_small_patch16_224'
+                print("🎯 使用ImageNet-1K预训练模型")
+            
+            # 加载预训练模型
+            pretrained_model = timm.create_model(model_name, pretrained=True)
             # 复制可以迁移的权重（除了patch embedding和分类头）
             load_pretrained_weights(model, pretrained_model, num_classes)
             print("✓ 成功加载预训练权重")
