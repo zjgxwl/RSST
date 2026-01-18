@@ -444,16 +444,33 @@ def main():
             is_best_sa = tacc  > best_sa
             best_sa = max(tacc, best_sa)
 
-            save_checkpoint({
-                'state': state,
-                'result': all_result,
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'best_sa': best_sa,
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-                'init_weight': initialization
-            }, is_SA_best=is_best_sa, pruning=state, save_path=args.save_dir)
+            # 优化：只在每个state的最后一个epoch保存checkpoint（节省时间）
+            # 每个state结束时保存最终checkpoint + 如果是最佳则也保存
+            if epoch == args.epochs - 1:
+                save_checkpoint({
+                    'state': state,
+                    'result': all_result,
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'best_sa': best_sa,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                    'init_weight': initialization
+                }, is_SA_best=is_best_sa, pruning=state, save_path=args.save_dir)
+                print(f"✓ State {state} checkpoint saved (final epoch: {epoch + 1}/{args.epochs})")
+            elif is_best_sa:
+                # 如果是最佳精度，即使不是最后一个epoch也保存（只保存best模型）
+                save_checkpoint({
+                    'state': state,
+                    'result': all_result,
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'best_sa': best_sa,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                    'init_weight': initialization
+                }, is_SA_best=True, pruning=state, save_path=args.save_dir)
+                print(f"✓ State {state} best checkpoint saved (epoch: {epoch + 1}/{args.epochs}, acc: {tacc:.2f}%)")
         
             # 注释掉绘图代码以提升训练速度
             # plt.plot(all_result['train'], label='train_acc')
