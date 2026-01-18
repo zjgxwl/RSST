@@ -487,12 +487,13 @@ def main():
 
             # 遍历模型的所有模块，并为每个卷积层/线性层进行处理
             is_vit = vit_pruning_utils.is_vit_model(model)
+            is_mamba = mamba_structured_pruning.is_mamba_model(model)
             for i, (name, m) in enumerate(model.named_modules()):
                 # 判断模块是否为卷积层（CNN）或Linear层（ViT）
                 if isinstance(m, nn.Conv2d):
                     # 判断是否处理第一层卷积或者其他卷积层
-                    # 对于ViT模型，跳过patch_embed层
-                    if name != 'conv1' and not (is_vit and 'patch_embed' in name):
+                    # 对于ViT/Mamba模型，跳过patch_embed层
+                    if name != 'conv1' and not ((is_vit or is_mamba) and 'patch_embed' in name):
                         # 获取对应的权重掩码
                         mask = passer.current_mask[name + '.weight_mask']
                         # 将掩码张量重新塑形为二维，其中第一维是通道数
