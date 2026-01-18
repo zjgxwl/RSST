@@ -444,16 +444,33 @@ def main():
             is_best_sa = tacc  > best_sa
             best_sa = max(tacc, best_sa)
 
-            save_checkpoint({
-                'state': state,
-                'result': all_result,
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'best_sa': best_sa,
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-                'init_weight': initialization
-            }, is_SA_best=is_best_sa, pruning=state, save_path=args.save_dir)
+            # 优化：只在每个state的最后一个epoch保存checkpoint（节省时间）
+            # 每个state结束时保存最终checkpoint + 如果是最佳则也保存
+            if epoch == args.epochs - 1:
+                save_checkpoint({
+                    'state': state,
+                    'result': all_result,
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'best_sa': best_sa,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                    'init_weight': initialization
+                }, is_SA_best=is_best_sa, pruning=state, save_path=args.save_dir)
+                print(f"✓ State {state} checkpoint saved (final epoch: {epoch + 1}/{args.epochs})")
+            elif is_best_sa:
+                # 如果是最佳精度，即使不是最后一个epoch也保存（只保存best模型）
+                save_checkpoint({
+                    'state': state,
+                    'result': all_result,
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'best_sa': best_sa,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                    'init_weight': initialization
+                }, is_SA_best=True, pruning=state, save_path=args.save_dir)
+                print(f"✓ State {state} best checkpoint saved (epoch: {epoch + 1}/{args.epochs}, acc: {tacc:.2f}%)")
         
             # 注释掉绘图代码以提升训练速度
             # plt.plot(all_result['train'], label='train_acc')
@@ -487,12 +504,13 @@ def main():
 
             # 遍历模型的所有模块，并为每个卷积层/线性层进行处理
             is_vit = vit_pruning_utils.is_vit_model(model)
+            is_mamba = mamba_structured_pruning.is_mamba_model(model)
             for i, (name, m) in enumerate(model.named_modules()):
                 # 判断模块是否为卷积层（CNN）或Linear层（ViT）
                 if isinstance(m, nn.Conv2d):
                     # 判断是否处理第一层卷积或者其他卷积层
-                    # 对于ViT模型，跳过patch_embed层
-                    if name != 'conv1' and not (is_vit and 'patch_embed' in name):
+                    # 对于ViT/Mamba模型，跳过patch_embed层
+                    if name != 'conv1' and not ((is_vit or is_mamba) and 'patch_embed' in name):
                         # 获取对应的权重掩码
                         mask = passer.current_mask[name + '.weight_mask']
                         # 将掩码张量重新塑形为二维，其中第一维是通道数

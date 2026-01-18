@@ -165,7 +165,7 @@ def prune_mamba_ssm_structured(model, prune_ratio=0.7, method='global',
             
             print(f"    {name}: {n_keep}/{n_total} channels kept ({n_keep/n_total:.1%})")
     
-    # 3. 实际修改模型结构
+    # 3. 实际修改模型结构（同步修改所有SSM内部层）
     print(f"\n  Applying pruning...")
     total_params_before = sum(p.numel() for p in model.parameters())
     
@@ -174,26 +174,107 @@ def prune_mamba_ssm_structured(model, prune_ratio=0.7, method='global',
         
         if out_proj_name in keep_channels_dict:
             keep_channels = keep_channels_dict[out_proj_name]
+            old_ssm = block.ssm
+            device = old_ssm.out_proj.weight.device
             
-            # 修改out_proj
-            old_out_proj = block.ssm.out_proj
-            new_in_features = len(keep_channels)
+            old_d_inner = old_ssm.d_inner
+            new_d_inner = len(keep_channels)
+            
+            print(f"    Block {block_idx}: d_inner {old_d_inner} → {new_d_inner}")
+            
+            # ========== 1. in_proj: [d_model, 2*d_inner] ==========
+            old_in_proj = old_ssm.in_proj
+            new_in_proj = nn.Linear(
+                old_in_proj.in_features,
+                2 * new_d_inner,
+                bias=(old_in_proj.bias is not None)
+            ).to(device)
+            
+            # 分别复制x和z分支的权重
+            old_weight = old_in_proj.weight.data  # [2*old_d_inner, d_model]
+            x_weight = old_weight[:old_d_inner, :][keep_channels, :]
+            z_weight = old_weight[old_d_inner:, :][keep_channels, :]
+            new_in_proj.weight.data = torch.cat([x_weight, z_weight], dim=0)
+            
+            if old_in_proj.bias is not None:
+                old_bias = old_in_proj.bias.data
+                x_bias = old_bias[:old_d_inner][keep_channels]
+                z_bias = old_bias[old_d_inner:][keep_channels]
+                new_in_proj.bias.data = torch.cat([x_bias, z_bias], dim=0)
+            
+            old_ssm.in_proj = new_in_proj
+            
+            # ========== 2. conv1d: [d_inner, d_inner, kernel] ==========
+            old_conv = old_ssm.conv1d
+            new_conv = nn.Conv1d(
+                new_d_inner,
+                new_d_inner,
+                kernel_size=old_conv.kernel_size[0],
+                padding=old_conv.padding[0],
+                groups=new_d_inner,  # depthwise保持
+                bias=(old_conv.bias is not None)
+            ).to(device)
+            
+            # 复制保留通道的卷积权重
+            new_conv.weight.data = old_conv.weight.data[keep_channels, :, :][:, :, :]
+            if old_conv.bias is not None:
+                new_conv.bias.data = old_conv.bias.data[keep_channels]
+            
+            old_ssm.conv1d = new_conv
+            
+            # ========== 3. x_proj: [d_inner, 2*d_state + d_inner] ==========
+            old_x_proj = old_ssm.x_proj
+            new_x_proj = nn.Linear(
+                new_d_inner,
+                old_ssm.d_state * 2 + new_d_inner,  # B, C, delta
+                bias=(old_x_proj.bias is not None)
+            ).to(device)
+            
+            # 分别处理B, C, delta三部分的权重
+            old_weight = old_x_proj.weight.data  # [2*d_state + old_d_inner, old_d_inner]
+            d_state = old_ssm.d_state
+            weight_B = old_weight[:d_state, :][:, keep_channels]
+            weight_C = old_weight[d_state:2*d_state, :][:, keep_channels]
+            weight_delta = old_weight[2*d_state:, :][:, keep_channels][keep_channels, :]
+            new_x_proj.weight.data = torch.cat([weight_B, weight_C, weight_delta], dim=0)
+            
+            if old_x_proj.bias is not None:
+                old_bias = old_x_proj.bias.data
+                bias_B = old_bias[:d_state]
+                bias_C = old_bias[d_state:2*d_state]
+                bias_delta = old_bias[2*d_state:][keep_channels]
+                new_x_proj.bias.data = torch.cat([bias_B, bias_C, bias_delta], dim=0)
+            
+            old_ssm.x_proj = new_x_proj
+            
+            # ========== 4. A_log: [d_inner, d_state] ==========
+            old_A_log = old_ssm.A_log.data
+            new_A_log = nn.Parameter(old_A_log[keep_channels, :])
+            new_A_log._no_weight_decay = True
+            old_ssm.A_log = new_A_log
+            
+            # ========== 5. D: [d_inner] ==========
+            old_D = old_ssm.D.data
+            new_D = nn.Parameter(old_D[keep_channels])
+            new_D._no_weight_decay = True
+            old_ssm.D = new_D
+            
+            # ========== 6. out_proj: [new_d_inner, d_model] ==========
+            old_out_proj = old_ssm.out_proj
             new_out_proj = nn.Linear(
-                new_in_features, 
-                old_out_proj.out_features, 
+                new_d_inner,
+                old_out_proj.out_features,
                 bias=(old_out_proj.bias is not None)
-            ).to(old_out_proj.weight.device)
+            ).to(device)
             
-            # 复制权重
             new_out_proj.weight.data = old_out_proj.weight.data[:, keep_channels]
             if old_out_proj.bias is not None:
                 new_out_proj.bias.data = old_out_proj.bias.data
             
-            block.ssm.out_proj = new_out_proj
+            old_ssm.out_proj = new_out_proj
             
-            # TODO: 协同修改上游层 (in_proj, conv1d, x_proj, D)
-            # 这需要修改SSM的d_inner维度
-            # 暂时只修改out_proj以验证流程
+            # ========== 7. 更新d_inner属性 ==========
+            old_ssm.d_inner = new_d_inner
     
     total_params_after = sum(p.numel() for p in model.parameters())
     
